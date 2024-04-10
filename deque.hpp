@@ -2,6 +2,7 @@
 #define SJTU_DEQUE_HPP
 
 #include <cstddef>
+#include <cmath>
 
 #include "exceptions.hpp"
 
@@ -129,6 +130,31 @@ namespace sjtu {
         list<block> bs;
         int size, bsize;
 
+        void update(list<block> *x) {
+            if (x == &bs) return;
+            bsize = sqrt(size);
+
+            //Split
+            if (x->data.size > 2*bsize) {
+                x->insert_after(x.data->cut(x->data.size/2));
+            }
+
+            //Merge
+            if (x->data.size < bsize) {
+                if (x->prev != &bs && x->prev->data.size + x->data.size <= 2*bsize) {
+                    auto *tmp = x->data, *p = x->prev;
+                    x->data = nullptr;
+                    x->erase();
+                    p->data.link_after(*tmp);
+                } else if (x->next!= &bs && x->next->data.size + x->data.size <= 2*bsize) {
+                    auto *tmp = x->next->data, *p = x;
+                    x->next->data = nullptr;
+                    x->next->erase();
+                    p->data.link_before(*tmp);
+                }
+            }
+        }
+
     public:
         class const_iterator;
         class iterator {
@@ -146,6 +172,8 @@ namespace sjtu {
             iterator(deque<T> *from, list<block> *p1, list<T> *p2, int cur=0) : from(from), p1(p1), p2(p2), cur(cur) {}
 
         public:
+            iterator() : from(nullptr), p1(nullptr), p2(nullptr), cur(0) {}
+
             /**
              * return a new iterator which points to the n-next element.
              * if there are not enough elements, the behaviour is undefined.
@@ -299,6 +327,7 @@ namespace sjtu {
             const_iterator(deque<T> *from, list<block> *p1, list<T> *p2, int cur=0) : from(from), p1(p1), p2(p2), cur(cur) {}
 
         public:
+            const_iterator() : from(nullptr), p1(nullptr), p2(nullptr), cur(0) {}
             /**
              * return a new iterator which points to the n-next element.
              * if there are not enough elements, the behaviour is undefined.
@@ -432,8 +461,25 @@ namespace sjtu {
         /**
          * constructors.
          */
-        deque() : size(0) {}
-        deque(const deque &other) {}
+        deque() : size(0), bsize(0), bs() {
+            bs.data.head.insert_after(new list<T>());
+            bs.data.size=1;
+        }
+        deque(const deque &other) {
+            bs.data.head.insert_after(new list<T>());
+            bs.data.size=1;
+            size = other.size,
+            bsize = sqrt(size);
+            int cnt = bsize;
+            for (auto it = other.begin(); it!=other.end(); it++) {
+                if (cnt==bsize) {
+                    cnt = 0;
+                    bs.insert_before(new block());
+                }
+                bs.prev->data->push_back(*it);
+                cnt++;
+            }
+        }
 
         /**
          * deconstructor.
@@ -443,61 +489,117 @@ namespace sjtu {
         /**
          * assignment operator.
          */
-        deque &operator=(const deque &other) {}
+        deque &operator=(const deque &other) {
+            if (&other == this) return;
+            clear();
+            size = other.size,
+            bsize = sqrt(size);
+            int cnt = bsize;
+            for (auto it = other.begin(); it!=other.end(); it++) {
+                if (cnt==bsize) {
+                    cnt = 0;
+                    bs.insert_before(new block());
+                }
+                bs.prev->data->push_back(*it);
+                cnt++;
+            }
+        }
 
         /**
          * access a specified element with bound checking.
          * throw index_out_of_bound if out of bound.
          */
-        T &at(const size_t &pos) {}
-        const T &at(const size_t &pos) const {}
-        T &operator[](const size_t &pos) {}
-        const T &operator[](const size_t &pos) const {}
+        T &at(const size_t &pos) {
+            if (pos >= size) {
+                throw index_out_of_bound();
+            }
+            iterator it = begin() + pos;
+            return *it;
+        }
+        const T &at(const size_t &pos) const {
+            if (pos >= size) {
+                throw index_out_of_bound();
+            }
+            const_iterator it = cbegin() + pos;
+            return *it;
+        }
+        T &operator[](const size_t &pos) {
+            return at(pos);
+        }
+        const T &operator[](const size_t &pos) const {
+            return at(pos);
+        }
 
         /**
          * access the first element.
          * throw container_is_empty when the container is empty.
          */
-        const T &front() const {}
+        const T &front() const {
+            return *cbegin();
+        }
         /**
          * access the last element.
          * throw container_is_empty when the container is empty.
          */
-        const T &back() const {}
+        const T &back() const {
+            return *(cend()-1);
+        }
 
         /**
          * return an iterator to the beginning.
          */
-        iterator begin() {}
-        const_iterator cbegin() const {}
+        iterator begin() {
+            return iterator(this, bs.next, bs.next->data.head.next);
+        }
+        const_iterator cbegin() const {
+            return const_iterator(this, bs.next, bs.next->data.head.next);
+        }
 
         /**
          * return an iterator to the end.
          */
-        iterator end() {}
-        const_iterator cend() const {}
+        iterator end() {
+            return iterator(this, &bs, &bs.data.head);
+        }
+        const_iterator cend() const {
+            return const_iterator(this, &bs, &bs.data.head);
+        }
 
         /**
          * check whether the container is empty.
          */
-        bool empty() const {}
+        bool empty() const {
+            return size == 1;
+        }
 
         /**
          * return the number of elements.
          */
-        size_t size() const {}
+        size_t size() const {
+            return size-1;
+        }
 
         /**
          * clear all contents.
          */
-        void clear() {}
+        void clear() {
+            for (; bs.next != &bs; bs.next->erase());
+            size = 1;
+        }
 
         /**
          * insert value before pos.
          * return an iterator pointing to the inserted value.
          * throw if the iterator is invalid or it points to a wrong place.
          */
-        iterator insert(iterator pos, const T &value) {}
+        iterator insert(iterator pos, const T &value) {
+            if (pos.from!=this) {
+                throw invalid_iterator();
+            }
+            pos.p1->data.insert_before(pos.p2, value);
+            size++;
+            update(pos.p1);
+        }
 
         /**
          * remove the element at pos.
@@ -505,29 +607,54 @@ namespace sjtu {
          * the last element, return end(). throw if the container is empty,
          * the iterator is invalid, or it points to a wrong place.
          */
-        iterator erase(iterator pos) {}
+        iterator erase(iterator pos) {
+            if (size == 1 || pos.from!=this || pos.p1 == &bs) {
+                throw invalid_iterator();
+            }
+            iterator nxt = pos+1;
+            pos.p1->data.erase(pos.p2);
+            size--;
+            update(pos.p1);
+            return nxt;
+        }
 
         /**
          * add an element to the end.
          */
-        void push_back(const T &value) {}
+        void push_back(const T &value) {
+            insert(end(), value);
+            size++;
+            update(bs.prev);
+        }
 
         /**
          * remove the last element.
          * throw when the container is empty.
          */
-        void pop_back() {}
+        void pop_back() {
+            erase(end()-1);
+            size--;
+            update(bs.prev);
+        }
 
         /**
          * insert an element to the beginning.
          */
-        void push_front(const T &value) {}
+        void push_front(const T &value) {
+            insert(begin(), value);
+            size++;
+            update(bs.next);
+        }
 
         /**
          * remove the first element.
          * throw when the container is empty.
          */
-        void pop_front() {}
+        void pop_front() {
+            erase(begin());
+            size--;
+            update(bs.next);
+        }
     };
 
 }  // namespace sjtu
