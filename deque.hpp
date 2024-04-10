@@ -41,6 +41,18 @@ namespace sjtu {
             prev = next = this;
         }
 
+        list<T>* next_nth(int n) const {
+            list<T> *p = this;
+            for (; n > 0; --n) p = p->next;
+            return p;
+        }
+
+        list<T>* prev_nth(int n) const {
+            list<T> *p = this;
+            for (; n > 0; --n) p = p->prev;
+            return p;
+        }
+
         ~list() {
             if (data) {
                 delete data;
@@ -126,10 +138,12 @@ namespace sjtu {
              * add data members.
              * just add whatever you want.
              */
+            deque<T> *from;
             list<block> *p1;
             list<T> *p2;
+            int cur;
 
-            iterator(list<block> *p1, list<T> *p2) : p1(p1), p2(p2) {}
+            iterator(deque<T> *from, list<block> *p1, list<T> *p2, int cur=0) : from(from), p1(p1), p2(p2), cur(cur) {}
 
         public:
             /**
@@ -138,8 +152,22 @@ namespace sjtu {
              * same for operator-.
              */
             iterator operator+(const int &n) const {
+                if (cur + n <= p1->data.size) {
+                    return iterator(p1, p2->next_nth(n), cur+n);
+                }
+                n = n + cur - p1->data.size;
+                p1 = p1->next;
+                for (; n > p1->data.size; n-=p1->data.size) p1 = p1->next;
+                return iterator(p1, p1->data.head.next_nth(n), n);
             }
             iterator operator-(const int &n) const {
+                if (cur-n > 0) {
+                    return iterator(p1, p2->prev_nth(n), cur-n);
+                }
+                n = n-cur;
+                p1 = p1->prev;
+                for (; n > p1->data.size; n-=p1->data.size) p1 = p1->prev;
+                return iterator(p1, p1->data.head.prev_nth(n), n);
             }
 
             /**
@@ -147,55 +175,258 @@ namespace sjtu {
              * if they point to different vectors, throw
              * invaild_iterator.
              */
-            int operator-(const iterator &rhs) const {}
-            iterator &operator+=(const int &n) {}
-            iterator &operator-=(const int &n) {}
+            int operator-(const iterator &rhs) const {
+                if (p1 == rhs.p1) {
+                    return rhs.cur - cur;
+                }
+                if (from != rhs.from) {
+                    throw invalid_iterator();
+                }
+                bool inv = false;
+                list<block> *ptr = p1->next;
+                int dis = (p1->data.size - cur) + rhs.cur;
+                for (; ptr!=p2; dis+=ptr->data.size, ptr = ptr->next) {
+                    if (ptr == &from->bs) {
+                        inv = true;
+                    }
+                }
+                return inv ? from->size - dis : dis;
+            }
+            iterator &operator+=(const int &n) {
+                return *this = *this + n;
+            }
+            iterator &operator-=(const int &n) {
+                return *this = *this - n;
+            }
 
             /**
              * iter++
              */
-            iterator operator++(int) {}
+            iterator operator++(int) {
+                iterator tmp = *this;
+                ++(*this);
+                return tmp;
+            }
             /**
              * ++iter
              */
-            iterator &operator++() {}
+            iterator &operator++() {
+                if (p1->data.size == cur) {
+                    p1 = p1->next;
+                    p2 = &p1->data.head;
+                    cur = 0;
+                }
+                p2 = p2->next;
+                cur++;
+                return *this;
+            }
             /**
              * iter--
              */
-            iterator operator--(int) {}
+            iterator operator--(int) {
+                iterator tmp = *this;
+                --(*this);
+                return tmp;
+            }
             /**
              * --iter
              */
-            iterator &operator--() {}
+            iterator &operator--() {
+                if (cur == 1) {
+                    p1 = p1->prev;
+                    p2 = &p1->data.head;
+                    cur = p1->data.size;
+                }
+                p2 = p2->prev;
+                cur--;
+                return *this;
+            }
 
             /**
              * *it
              */
-            T &operator*() const {}
+            T &operator*() const {
+                return p2->data;
+            }
             /**
              * it->field
              */
-            T *operator->() const noexcept {}
+            T *operator->() const noexcept {
+                return &p2->data;
+            }
 
             /**
              * check whether two iterators are the same (pointing to the same
              * memory).
              */
-            bool operator==(const iterator &rhs) const {}
-            bool operator==(const const_iterator &rhs) const {}
+            bool operator==(const iterator &rhs) const {
+                return p1 == rhs.p1 && p2 == rhs.p2;
+            }
+            bool operator==(const const_iterator &rhs) const {
+                return p1 == rhs.p1 && p2 == rhs.p2;
+            }
             /**
              * some other operator for iterators.
              */
-            bool operator!=(const iterator &rhs) const {}
-            bool operator!=(const const_iterator &rhs) const {}
+            bool operator!=(const iterator &rhs) const {
+                return !(*this == rhs);
+            }
+            bool operator!=(const const_iterator &rhs) const {
+                return !(*this == rhs);
+            }
         };
 
         class const_iterator {
+            friend class deque;
             /**
              * it should has similar member method as iterator.
              * you can copy them, but with care!
              * and it should be able to be constructed from an iterator.
              */
+            /*
+             * Pasted...
+             */
+        private:
+            /**
+             * add data members.
+             * just add whatever you want.
+             */
+            deque<T> *from;
+            list<block> *p1;
+            list<T> *p2;
+            int cur;
+
+            const_iterator(deque<T> *from, list<block> *p1, list<T> *p2, int cur=0) : from(from), p1(p1), p2(p2), cur(cur) {}
+
+        public:
+            /**
+             * return a new iterator which points to the n-next element.
+             * if there are not enough elements, the behaviour is undefined.
+             * same for operator-.
+             */
+            const_iterator operator+(const int &n) const {
+                if (cur + n <= p1->data.size) {
+                    return const_iterator(p1, p2->next_nth(n), cur+n);
+                }
+                n = n + cur - p1->data.size;
+                p1 = p1->next;
+                for (; n > p1->data.size; n-=p1->data.size) p1 = p1->next;
+                return const_iterator(p1, p1->data.head.next_nth(n), n);
+            }
+            const_iterator operator-(const int &n) const {
+                if (cur-n > 0) {
+                    return const_iterator(p1, p2->prev_nth(n), cur-n);
+                }
+                n = n-cur;
+                p1 = p1->prev;
+                for (; n > p1->data.size; n-=p1->data.size) p1 = p1->prev;
+                return const_iterator(p1, p1->data.head.prev_nth(n), n);
+            }
+
+            /**
+             * return the distance between two iterators.
+             * if they point to different vectors, throw
+             * invaild_iterator.
+             */
+            int operator-(const const_iterator &rhs) const {
+                if (p1 == rhs.p1) {
+                    return rhs.cur - cur;
+                }
+                if (from != rhs.from) {
+                    throw invalid_iterator();
+                }
+                bool inv = false;
+                list<block> *ptr = p1->next;
+                int dis = (p1->data.size - cur) + rhs.cur;
+                for (; ptr!=p2; dis+=ptr->data.size, ptr = ptr->next) {
+                    if (ptr == &from->bs) {
+                        inv = true;
+                    }
+                }
+                return inv ? from->size - dis : dis;
+            }
+            const_iterator &operator+=(const int &n) {
+                return *this = *this + n;
+            }
+            const_iterator &operator-=(const int &n) {
+                return *this = *this - n;
+            }
+
+            /**
+             * iter++
+             */
+            const_iterator operator++(int) {
+                const_iterator tmp = *this;
+                ++(*this);
+                return tmp;
+            }
+            /**
+             * ++iter
+             */
+            const_iterator &operator++() {
+                if (p1->data.size == cur) {
+                    p1 = p1->next;
+                    p2 = &p1->data.head;
+                    cur = 0;
+                }
+                p2 = p2->next;
+                cur++;
+                return *this;
+            }
+            /**
+             * iter--
+             */
+            const_iterator operator--(int) {
+                const_iterator tmp = *this;
+                --(*this);
+                return tmp;
+            }
+            /**
+             * --iter
+             */
+            const_iterator &operator--() {
+                if (cur == 1) {
+                    p1 = p1->prev;
+                    p2 = &p1->data.head;
+                    cur = p1->data.size;
+                }
+                p2 = p2->prev;
+                cur--;
+                return *this;
+            }
+
+            /**
+             * *it
+             */
+            const T &operator*() const {
+                return p2->data;
+            }
+            /**
+             * it->field
+             */
+            const T *operator->() const noexcept {
+                return &p2->data;
+            }
+
+            /**
+             * check whether two iterators are the same (pointing to the same
+             * memory).
+             */
+            bool operator==(const iterator &rhs) const {
+                return p1 == rhs.p1 && p2 == rhs.p2;
+            }
+            bool operator==(const const_iterator &rhs) const {
+                return p1 == rhs.p1 && p2 == rhs.p2;
+            }
+            /**
+             * some other operator for iterators.
+             */
+            bool operator!=(const iterator &rhs) const {
+                return !(*this == rhs);
+            }
+            bool operator!=(const const_iterator &rhs) const {
+                return !(*this == rhs);
+            }
         };
 
         /**
