@@ -275,12 +275,20 @@ namespace sjtu {
                     throw index_out_of_bound();
                 }
 				auto p1 = p;
-				int ncur = cur, nn = n;
-				for (; nn && !p1->data->from; p1 = p1->next, nn--, ncur++);
-				if (!p1->data->from) return iterator(from, p1, ncur);
-				list<block> *pb = p1->data->from->next;
-				for (; nn>=pb->data->size; nn -= pb->data->size, ncur += pb->data->size, pb = pb->next);
-				return iterator(from, pb->data->head.next->next_nth(nn), ncur+nn);
+				int nn = n;
+
+                //Special for begin() + n
+                if (p1->prev->data->from && nn >= p1->prev->data->from->data->size) {
+                    nn-=p1->prev->data->from->data->size;
+                    p1 = p1->prev;
+                } else {
+                    for (; nn && !p1->data->from; p1 = p1->next, nn--)
+                        ;
+                    if (!p1->data->from) return iterator(from, p1, cur+n);
+                }
+                list<block> *pb = p1->data->from->next;
+				for (; nn>=pb->data->size; nn -= pb->data->size, pb = pb->next);
+				return iterator(from, pb->data->head.next->next_nth(nn), cur+n);
 				/*
                 if (cur + n <= p1->data.size) {
                     return iterator(p1, p2->next_nth(n), cur+n);
@@ -442,12 +450,20 @@ namespace sjtu {
                     throw index_out_of_bound();
                 }
 				auto p1 = p;
-				int ncur = cur, nn = n;
-				for (; nn && !p1->data->from; p1 = p1->next, nn--, ncur++);
-				if (!p1->data->from) return const_iterator(from, p1, ncur);
+				int nn = n;
+
+                //Special for begin() + n
+                if (p1->prev->data->from && nn >= p1->prev->data->from->data->size) {
+                    nn-=p1->prev->data->from->data->size;
+                    p1 = p1->prev;
+                } else {
+                    for (; nn && !p1->data->from; p1 = p1->next, nn--)
+                        ;
+                    if (!p1->data->from) return const_iterator(from, p1, cur+n);
+                }
 				list<block> *pb = p1->data->from->next;
-				for (; nn>=pb->data->size; nn -= pb->data->size, ncur += pb->data->size, pb = pb->next);
-				return const_iterator(from, pb->data->head.next->next_nth(nn), ncur+nn);
+				for (; nn>=pb->data->size; nn -= pb->data->size, pb = pb->next);
+				return const_iterator(from, pb->data->head.next->next_nth(nn), cur+n);
 				/*
                 if (cur + n <= p1->data.size) {
                     return iterator(p1, p2->next_nth(n), cur+n);
@@ -729,7 +745,12 @@ namespace sjtu {
          * add an element to the end.
          */
         void push_back(const T &value) {
-            insert(end(), value);
+            // insert(end(), value);
+            if (bs.prev == &bs) {
+                bs.insert_before(makeBlock());
+            }
+            bs.prev->data->insert_before(&bs.prev->data->head, value);
+            size_c++;
             update(bs.prev);
         }
 
@@ -741,7 +762,9 @@ namespace sjtu {
             if (empty()) {
                 throw container_is_empty();
             }
-            erase(end()-1);
+            // erase(end()-1);
+            bs.prev->data->erase(bs.prev->data->head.prev);
+            size_c--;
             update(bs.prev);
         }
 
@@ -749,7 +772,12 @@ namespace sjtu {
          * insert an element to the beginning.
          */
         void push_front(const T &value) {
-            insert(begin(), value);
+            // insert(begin(), value);
+            if (bs.next == &bs) {
+                bs.insert_after(makeBlock());
+            }
+            bs.next->data->insert_before(bs.next->data->head.next, value);
+            size_c++;
             update(bs.next);
         }
 
@@ -761,7 +789,9 @@ namespace sjtu {
 			if (empty()) {
                 throw container_is_empty();
 			}
-            erase(begin());
+            // erase(begin());
+            bs.next->data->erase(bs.next->data->head.next);
+            size_c--;
             update(bs.next);
         }
     };
