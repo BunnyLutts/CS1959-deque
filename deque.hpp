@@ -75,11 +75,27 @@ namespace sjtu {
     template <class T>
     class deque {
     private:
-        struct block { 
-            list<T> head;
-            int size=0;
+		struct block;
+		struct node {
+			T *data;
+			list<block> *from;
 
-            block &link_after(block &x) {
+			node() : head(nullptr), from(nullptr) {}
+			node(T *data) : data(data), from(nullptr) {}
+			node(const T &data) : data(data), from(nullptr) {}
+			node(list<block> *from) : data(nullptr), from(from) {}
+
+			~node() {
+				if (data) delete data;
+			}
+		};
+        struct block { 
+            list<node> head;
+            int size;
+
+			block() : size(0) {}
+
+            block *link_after(block *x) {
                 x.head->next->prev = head->prev;
                 x.head->prev->next = head;
                 head->prev->next = x.head->next;
@@ -87,17 +103,14 @@ namespace sjtu {
                 size += x.size;
                 x.head->next = x.head->prev = &x.head;
                 x.size = 0;
+				delete x;
                 return this;
             }
 
-            block &link_before(block &x) {
-                return x.link_after(*this);
-            }
-
-            block &cut_after(int pos) {
+            block *cut_after(int pos) {
                 list *p = &head;
                 for (; pos > 0; p = p->next, --pos);
-                block *x = new block;
+                block *x = makeBlock();
                 x.head->next = p->next;
                 x.head->prev = head->prev;
                 x.head->next->prev = x.head->prev->next = &x.head;
@@ -105,6 +118,7 @@ namespace sjtu {
                 p->next = &head;
                 head->prev = p;
                 size = pos;
+				return x;
             }
 
             void pop_front() {
@@ -114,7 +128,7 @@ namespace sjtu {
 
             void push_front(const T &data) {
                 size++;
-                head.insert_after(new list<T>(data));
+                head.insert_after(new list<T>(new node(data)));
             }
 
             void pop_back() {
@@ -124,11 +138,15 @@ namespace sjtu {
 
             void push_back(const T &data) {
                 size++;
-                head.insert_before(new list<T>(data));
+                head.insert_before(new list<T>(new node(data)));
             }
         };
         list<block> bs;
         int size, bsize;
+
+		list<block>* assignBlock(list<block> *x) {
+			return x->data->head->from = x;
+		}
 
         void update(list<block> *x) {
             if (x == &bs) return;
@@ -145,12 +163,12 @@ namespace sjtu {
                     auto *tmp = x->data, *p = x->prev;
                     x->data = nullptr;
                     x->erase();
-                    p->data.link_after(*tmp);
+                    p->data.link_after(tmp);
                 } else if (x->next!= &bs && x->next->data.size + x->data.size <= 2*bsize) {
                     auto *tmp = x->next->data, *p = x;
                     x->next->data = nullptr;
                     x->next->erase();
-                    p->data.link_before(*tmp);
+                    p->data.link_after(tmp);
                 }
             }
         }
@@ -165,14 +183,19 @@ namespace sjtu {
              * just add whatever you want.
              */
             deque<T> *from;
-            list<block> *p1;
-            list<T> *p2;
+			list<node> *p;
             int cur;
 
-            iterator(deque<T> *from, list<block> *p1, list<T> *p2, int cur=0) : from(from), p1(p1), p2(p2), cur(cur) {}
+            iterator(deque<T> *from, list<node> *p, int cur=0) : from(from), p(p), cur(cur) {}
+
+			list<block>* findBlock() const {
+				auto p1 = p;
+				for (; !p1->data->from; p1 = p1->prev);
+				return p1->data->from;
+			}
 
         public:
-            iterator() : from(nullptr), p1(nullptr), p2(nullptr), cur(0) {}
+            iterator() : from(nullptr), p(nullptr), cur(0) {}
 
             /**
              * return a new iterator which points to the n-next element.
@@ -180,6 +203,14 @@ namespace sjtu {
              * same for operator-.
              */
             iterator operator+(const int &n) const {
+				auto p1 = p;
+				int ncur = cur;
+				for (; n && !p1->data->from; p1 = p1->next, n--, ncur++);
+				if (!p1->data->from) return iterator(from, p1, ncur);
+				list<block> *pb = p1->data->from->next;
+				for (; n>=pb->data->size; n -= pb->data->size, ncur += pb->data->size, pb = pb->next);
+				return iterator(from, pb->data->head.next->next_nth(n), ncur+n);
+				/*
                 if (cur + n <= p1->data.size) {
                     return iterator(p1, p2->next_nth(n), cur+n);
                 }
@@ -187,8 +218,17 @@ namespace sjtu {
                 p1 = p1->next;
                 for (; n > p1->data.size; n-=p1->data.size) p1 = p1->next;
                 return iterator(p1, p1->data.head.next_nth(n), n);
+				*/
             }
             iterator operator-(const int &n) const {
+				auto p1 = p;
+				int ncur = cur;
+				for (; n && !p1->data->from; p1 = p1->prev, n--, ncur--);
+				if (!p1->data->from) return iterator(from, p1, ncur);
+				list<block> *pb = p1->data->from->prev;
+				for (; n>=pb->data->size; n -= pb->data->size, ncur -= pb->data->size, pb = pb->prev);
+				return iterator(from, pb->data->head.prev->prev_nth(n), ncur-n);
+				/*
                 if (cur-n > 0) {
                     return iterator(p1, p2->prev_nth(n), cur-n);
                 }
@@ -196,6 +236,7 @@ namespace sjtu {
                 p1 = p1->prev;
                 for (; n > p1->data.size; n-=p1->data.size) p1 = p1->prev;
                 return iterator(p1, p1->data.head.prev_nth(n), n);
+				*/
             }
 
             /**
@@ -204,21 +245,10 @@ namespace sjtu {
              * invaild_iterator.
              */
             int operator-(const iterator &rhs) const {
-                if (p1 == rhs.p1) {
-                    return rhs.cur - cur;
-                }
                 if (from != rhs.from) {
                     throw invalid_iterator();
                 }
-                bool inv = false;
-                list<block> *ptr = p1->next;
-                int dis = (p1->data.size - cur) + rhs.cur;
-                for (; ptr!=p2; dis+=ptr->data.size, ptr = ptr->next) {
-                    if (ptr == &from->bs) {
-                        inv = true;
-                    }
-                }
-                return inv ? from->size - dis : dis;
+				return cur-rhs.cur;
             }
             iterator &operator+=(const int &n) {
                 return *this = *this + n;
@@ -239,14 +269,7 @@ namespace sjtu {
              * ++iter
              */
             iterator &operator++() {
-                if (p1->data.size == cur) {
-                    p1 = p1->next;
-                    p2 = &p1->data.head;
-                    cur = 0;
-                }
-                p2 = p2->next;
-                cur++;
-                return *this;
+                return *this = *this + 1;
             }
             /**
              * iter--
@@ -260,27 +283,20 @@ namespace sjtu {
              * --iter
              */
             iterator &operator--() {
-                if (cur == 1) {
-                    p1 = p1->prev;
-                    p2 = &p1->data.head;
-                    cur = p1->data.size;
-                }
-                p2 = p2->prev;
-                cur--;
-                return *this;
+                return *this = *this - 1;
             }
 
             /**
              * *it
              */
             T &operator*() const {
-                return p2->data;
+                return p->data->data;
             }
             /**
              * it->field
              */
             T *operator->() const noexcept {
-                return &p2->data;
+                return &p->data->data;
             }
 
             /**
@@ -288,10 +304,10 @@ namespace sjtu {
              * memory).
              */
             bool operator==(const iterator &rhs) const {
-                return p1 == rhs.p1 && p2 == rhs.p2;
+				return p == rhs.p;
             }
             bool operator==(const const_iterator &rhs) const {
-                return p1 == rhs.p1 && p2 == rhs.p2;
+				return p == rhs.p;
             }
             /**
              * some other operator for iterators.
@@ -320,36 +336,60 @@ namespace sjtu {
              * just add whatever you want.
              */
             deque<T> *from;
-            list<block> *p1;
-            list<T> *p2;
+			list<node> *p;
             int cur;
 
-            const_iterator(deque<T> *from, list<block> *p1, list<T> *p2, int cur=0) : from(from), p1(p1), p2(p2), cur(cur) {}
+            const_iterator(deque<T> *from, list<node> *p, int cur=0) : from(from), p(p), cur(cur) {}
 
+			list<block>* findBlock() const {
+				auto p1 = p;
+				for (; !p1->data->from; p1 = p1->prev);
+				return p1->data->from;
+			}
         public:
-            const_iterator() : from(nullptr), p1(nullptr), p2(nullptr), cur(0) {}
+            const_iterator() : from(nullptr), p(nullptr), cur(0) {}
+			const_iterator(const iterator &other) : from(other.from), p(other.p), cur(other.cur) {}
+
             /**
              * return a new iterator which points to the n-next element.
              * if there are not enough elements, the behaviour is undefined.
              * same for operator-.
              */
             const_iterator operator+(const int &n) const {
+				auto p1 = p;
+				int ncur = cur;
+				for (; n && !p1->data->from; p1 = p1->next, n--, ncur++);
+				if (!p1->data->from) return const_iterator(from, p1, ncur);
+				list<block> *pb = p1->data->from->next;
+				for (; n>=pb->data->size; n -= pb->data->size, ncur += pb->data->size, pb = pb->next);
+				return const_iterator(from, pb->data->head.next->next_nth(n), ncur+n);
+				/*
                 if (cur + n <= p1->data.size) {
-                    return const_iterator(p1, p2->next_nth(n), cur+n);
+                    return iterator(p1, p2->next_nth(n), cur+n);
                 }
                 n = n + cur - p1->data.size;
                 p1 = p1->next;
                 for (; n > p1->data.size; n-=p1->data.size) p1 = p1->next;
-                return const_iterator(p1, p1->data.head.next_nth(n), n);
+                return iterator(p1, p1->data.head.next_nth(n), n);
+				*/
             }
             const_iterator operator-(const int &n) const {
+				auto p1 = p;
+				int ncur = cur;
+				for (; n && !p1->data->from; p1 = p1->prev, n--, ncur--);
+				if (!p1->data->from) return const_iterator(from, p1, ncur);
+				list<block> *pb = p1->data->from->prev;
+				for (; n>=pb->data->size; n -= pb->data->size, ncur -= pb->data->size, pb = pb->prev);
+				return const_iterator(from, pb->data->head.prev->prev_nth(n), ncur-n);
+				/*
                 if (cur-n > 0) {
-                    return const_iterator(p1, p2->prev_nth(n), cur-n);
+                    return iterator(p1, p2->prev_nth(n), cur-n);
                 }
                 n = n-cur;
                 p1 = p1->prev;
                 for (; n > p1->data.size; n-=p1->data.size) p1 = p1->prev;
-                return const_iterator(p1, p1->data.head.prev_nth(n), n);
+                return iterator(p1, p1->data.head.prev_nth(n), n);
+				*/
             }
 
             /**
@@ -358,21 +398,10 @@ namespace sjtu {
              * invaild_iterator.
              */
             int operator-(const const_iterator &rhs) const {
-                if (p1 == rhs.p1) {
-                    return rhs.cur - cur;
-                }
                 if (from != rhs.from) {
                     throw invalid_iterator();
                 }
-                bool inv = false;
-                list<block> *ptr = p1->next;
-                int dis = (p1->data.size - cur) + rhs.cur;
-                for (; ptr!=p2; dis+=ptr->data.size, ptr = ptr->next) {
-                    if (ptr == &from->bs) {
-                        inv = true;
-                    }
-                }
-                return inv ? from->size - dis : dis;
+				return cur-rhs.cur;
             }
             const_iterator &operator+=(const int &n) {
                 return *this = *this + n;
@@ -393,14 +422,7 @@ namespace sjtu {
              * ++iter
              */
             const_iterator &operator++() {
-                if (p1->data.size == cur) {
-                    p1 = p1->next;
-                    p2 = &p1->data.head;
-                    cur = 0;
-                }
-                p2 = p2->next;
-                cur++;
-                return *this;
+                return *this = *this + 1;
             }
             /**
              * iter--
@@ -414,27 +436,20 @@ namespace sjtu {
              * --iter
              */
             const_iterator &operator--() {
-                if (cur == 1) {
-                    p1 = p1->prev;
-                    p2 = &p1->data.head;
-                    cur = p1->data.size;
-                }
-                p2 = p2->prev;
-                cur--;
-                return *this;
+                return *this = *this - 1;
             }
 
             /**
              * *it
              */
-            const T &operator*() const {
-                return p2->data;
+            T &operator*() const {
+                return p->data->data;
             }
             /**
              * it->field
              */
-            const T *operator->() const noexcept {
-                return &p2->data;
+            T *operator->() const noexcept {
+                return &p->data->data;
             }
 
             /**
@@ -442,10 +457,10 @@ namespace sjtu {
              * memory).
              */
             bool operator==(const iterator &rhs) const {
-                return p1 == rhs.p1 && p2 == rhs.p2;
+				return p == rhs.p;
             }
             bool operator==(const const_iterator &rhs) const {
-                return p1 == rhs.p1 && p2 == rhs.p2;
+				return p == rhs.p;
             }
             /**
              * some other operator for iterators.
@@ -461,20 +476,22 @@ namespace sjtu {
         /**
          * constructors.
          */
-        deque() : size(0), bsize(0), bs() {
-            bs.data.head.insert_after(new list<T>());
+        deque() : size(0), bsize(128), bs() {
+            bs.data.head.insert_after(new list<node>());
+			assignBlock(&bs);
             bs.data.size=1;
         }
         deque(const deque &other) {
-            bs.data.head.insert_after(new list<T>());
+            bs.data.head.insert_after(new list<node>());
+			assignBlock(&bs);
             bs.data.size=1;
-            size = other.size,
+            size = other.size;
             bsize = sqrt(size);
             int cnt = bsize;
             for (auto it = other.begin(); it!=other.end(); it++) {
                 if (cnt==bsize) {
                     cnt = 0;
-                    bs.insert_before(new block());
+                    bs.insert_before(assignBlock(new list<block>()));
                 }
                 bs.prev->data->push_back(*it);
                 cnt++;
@@ -549,20 +566,20 @@ namespace sjtu {
          * return an iterator to the beginning.
          */
         iterator begin() {
-            return iterator(this, bs.next, bs.next->data.head.next);
+            return iterator(this, bs.next->data->head.next, 0);
         }
         const_iterator cbegin() const {
-            return const_iterator(this, bs.next, bs.next->data.head.next);
+            return const_iterator(this, bs.next->data->head.next, 0);
         }
 
         /**
          * return an iterator to the end.
          */
         iterator end() {
-            return iterator(this, &bs, &bs.data.head);
+            return iterator(this, &bs.data.head, size-1);
         }
         const_iterator cend() const {
-            return const_iterator(this, &bs, &bs.data.head);
+            return const_iterator(this, &bs.data.head, size-1);
         }
 
         /**
@@ -596,9 +613,10 @@ namespace sjtu {
             if (pos.from!=this) {
                 throw invalid_iterator();
             }
-            pos.p1->data.insert_before(pos.p2, value);
+			auto p1 = pos.findBlock();
+            p1->data.insert_before(pos.p, value);
             size++;
-            update(pos.p1);
+            update(p1);
         }
 
         /**
@@ -612,9 +630,11 @@ namespace sjtu {
                 throw invalid_iterator();
             }
             iterator nxt = pos+1;
-            pos.p1->data.erase(pos.p2);
+			auto p1 = pos.findBlock();
+            p1->data.erase(pos.p);
+			nxt.cur--;
             size--;
-            update(pos.p1);
+            update(p1);
             return nxt;
         }
 
