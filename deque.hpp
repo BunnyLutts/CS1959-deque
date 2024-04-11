@@ -271,6 +271,9 @@ namespace sjtu {
              */
             iterator operator+(const int &n) const {
                 if (n<0) return *this - (-n);
+                if (cur+n >= from->size_c) {
+                    throw index_out_of_bound();
+                }
 				auto p1 = p;
 				int ncur = cur, nn = n;
 				for (; nn && !p1->data->from; p1 = p1->next, nn--, ncur++);
@@ -290,6 +293,9 @@ namespace sjtu {
             }
             iterator operator-(const int &n) const {
                 if (n<0) return *this + (-n);
+                if (cur-n < 0) {
+                    throw index_out_of_bound();
+                }
 				auto p1 = p;
 				int ncur = cur, nn = n;
 				for (; nn && !p1->data->from; p1 = p1->prev, nn--, ncur--);
@@ -432,6 +438,9 @@ namespace sjtu {
              */
             const_iterator operator+(const int &n) const {
                 if (n<0) return *this - (-n);
+                if (cur + n >= from->size_c) {
+                    throw index_out_of_bound();
+                }
 				auto p1 = p;
 				int ncur = cur, nn = n;
 				for (; nn && !p1->data->from; p1 = p1->next, nn--, ncur++);
@@ -451,6 +460,9 @@ namespace sjtu {
             }
             const_iterator operator-(const int &n) const {
                 if (n<0) return *this + (-n);
+                if (cur-n < 0) {
+                    throw index_out_of_bound();
+                }
 				auto p1 = p;
 				int ncur = cur, nn = n;
 				for (; nn && !p1->data->from; p1 = p1->prev, nn--, ncur--);
