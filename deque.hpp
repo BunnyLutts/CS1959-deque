@@ -538,13 +538,15 @@ namespace sjtu {
         /**
          * constructors.
          */
-        deque() : size_c(0), bsize(0), bs() {
-            bs.data->head.insert_after(new list<node>());
+        deque() : size_c(1) {
+            bs.data = new block();
+            bs.data->head.insert_after(new list<node>(new node()));
 			assignBlock(&bs);
             bs.data->size=1;
         }
-        deque(const deque &other) {
-            bs.data->head.insert_after(new list<node>());
+        deque(const deque &other) : size_c(1) {
+            bs.data = new block();
+            bs.data->head.insert_after(new list<node>(new node()));
 			assignBlock(&bs);
             bs.data->size=1;
             copy(other);
@@ -619,10 +621,10 @@ namespace sjtu {
          * return an iterator to the end.
          */
         iterator end() {
-            return iterator(this, bs.data->head.next, size_c);
+            return iterator(this, bs.data->head.next, size_c-1);
         }
         const_iterator cend() const {
-            return const_iterator(this, bs.data->head.next, size_c);
+            return const_iterator(this, bs.data->head.next, size_c-1);
         }
 
         /**
@@ -656,8 +658,15 @@ namespace sjtu {
             if (pos.from!=this) {
                 throw invalid_iterator();
             }
-			auto p1 = pos.findBlock();
-            auto p2 = p1->data->insert_before(pos.p, value);
+			auto p1 = pos.findBlock(), p = pos.p;
+            if (p1 == &bs) {
+                if (p1->prev == &bs) {
+                    p1->insert_before(makeBlock());
+                }
+                p1 = p1->prev;
+                p = &p1->data->head;
+            }
+            auto p2 = p1->data->insert_before(p, value);
             size_c++;
             update(p1);
             return iterator(this, p2, pos.cur);
@@ -688,7 +697,6 @@ namespace sjtu {
          */
         void push_back(const T &value) {
             insert(end(), value);
-            size_c++;
             update(bs.prev);
         }
 
@@ -701,7 +709,6 @@ namespace sjtu {
                 throw container_is_empty();
             }
             erase(end()-1);
-            size_c--;
             update(bs.prev);
         }
 
@@ -710,7 +717,6 @@ namespace sjtu {
          */
         void push_front(const T &value) {
             insert(begin(), value);
-            size_c++;
             update(bs.next);
         }
 
@@ -723,7 +729,6 @@ namespace sjtu {
                 throw container_is_empty();
 			}
             erase(begin());
-            size_c--;
             update(bs.next);
         }
     };
