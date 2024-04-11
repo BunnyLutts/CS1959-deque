@@ -200,6 +200,11 @@ namespace sjtu {
             if (x == &bs) return;
             bsize = sqrt(size_c);
 
+            if (x->data->size == 0) {
+                list<block>::erase(x);
+                return;
+            }
+
             //Split
             if (x->data->size > 2*bsize) {
                 x->insert_after(makeBlock(x->data->cut_after(x->data->size/2)));
@@ -354,12 +359,18 @@ namespace sjtu {
              * *it
              */
             T &operator*() const {
+                if (!p->data || !p->data->data) {
+                    throw invalid_iterator();
+                }
                 return *p->data->data;
             }
             /**
              * it->field
              */
             T *operator->() const noexcept {
+                if (!p->data || !p->data->data) {
+                    throw invalid_iterator();
+                }
                 return p->data->data;
             }
 
@@ -509,12 +520,18 @@ namespace sjtu {
              * *it
              */
             T &operator*() const {
+                if (!p->data || !p->data->data) {
+                    throw invalid_iterator();
+                }
                 return *p->data->data;
             }
             /**
              * it->field
              */
             T *operator->() const noexcept {
+                if (!p->data || !p->data->data) {
+                    throw invalid_iterator();
+                }
                 return p->data->data;
             }
 
@@ -576,14 +593,14 @@ namespace sjtu {
          * throw index_out_of_bound if out of bound.
          */
         T &at(const size_t &pos) {
-            if (pos >= size_c) {
+            if (pos >= size_c-1) {
                 throw index_out_of_bound();
             }
             iterator it = begin() + pos;
             return *it;
         }
         const T &at(const size_t &pos) const {
-            if (pos >= size_c) {
+            if (pos >= size_c-1) {
                 throw index_out_of_bound();
             }
             const_iterator it = cbegin() + pos;
