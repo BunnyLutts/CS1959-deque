@@ -95,23 +95,36 @@ namespace sjtu {
     template <class T>
     class deque {
     private:
+        static const int BSIZE = 128;
+
 		struct block;
-		struct node {
-			T *data;
+		struct node : list<T> {
 			list<block> *from;
 
-			node() : data(nullptr), from(nullptr) {}
-			node(T *data) : data(data), from(nullptr) {}
-			node(const T &data) : data(new T(data)), from(nullptr) {}
-			node(list<block> *from) : data(nullptr), from(from) {}
-
-			~node() {
-				if (data) delete data;
-			}
+			node() : list<T>(), from(nullptr) {}
+			node(T *data) : list<T>(data), from(nullptr) {}
+			node(const T &data) : list<T>(data), from(nullptr) {}
+			node(list<block> *from) : list<T>(), from(from) {}
 		};
 
+        static node* cas(list<T> *p) {
+            return reinterpret_cast<node *>(p);
+        }
+
+        static const node* cas(const list<T> *p) {
+            return reinterpret_cast<const node *>(p);
+        }
+        
+        static list<block>* nfrom(list<T> *p) {
+            return reinterpret_cast<node *>(p)->from;
+        }
+
+        static const list<block>* nfrom(const list<T> *p) {
+            return reinterpret_cast<const node *>(p)->from;
+        }
+
         struct block { 
-            list<node> head;
+            node head;
             int size;
 
 			block() : size(0) {}
@@ -129,7 +142,7 @@ namespace sjtu {
             }
 
             block *cut_after(int pos) {
-                list<node> *p = head.next_nth(pos);
+                list<T> *p = head.next_nth(pos);
                 block *x = new block();
                 x->head.next = p->next;
                 x->head.prev = head.prev;
@@ -142,37 +155,37 @@ namespace sjtu {
             }
 
 			//Insert before
-			list<node>* insert_before(list<node> *p, const T &data) {
+			list<T>* insert_before(list<T> *p, const T &data) {
 				size++;
-                list<node> *x = new list<node>(new node(data));
+                node *x = new node(data);
 				p->insert_before(x);
                 return x;
 			}
 
 			//Erase
-			void erase(list<node> *p) {
+			void erase(list<T> *p) {
 				size--;
-				list<node>::erase(p);
+				node::erase(cas(p));
 			}
 
             void pop_front() {
                 size--;
-				list<node>::erase(head->next);
+				node::erase(cas(head->next));
             }
 
             void push_front(const T &data) {
                 size++;
-                head.insert_after(new list<T>(new node(data)));
+                head.insert_after(new node(data));
             }
 
             void pop_back() {
                 size--;
-				list<node>::erase(head->prev);
+				list<node>::erase(cas(head->prev));
             }
 
             void push_back(const T &data) {
                 size++;
-                head.insert_before(new list<node>(new node(data)));
+                head.insert_before(new node(data));
             }
         };
 
@@ -180,11 +193,7 @@ namespace sjtu {
         int size_c, bsize;
 
 		static list<block>* assignBlock(list<block> *x) {
-            if (!x->data->head.data) {
-                x->data->head.data = new node(x);
-            } else {
-                x->data->head.data->from = x;
-            }
+            x->data->head.from = x;
 			return x;
 		}
 
@@ -198,7 +207,7 @@ namespace sjtu {
 
         void update(list<block> *x) {
             if (x == &bs) return;
-            bsize = sqrt(size_c);
+            bsize = BSIZE*BSIZE < size_c ? sqrt(size_c) : BSIZE;
 
             if (x->data->size == 0) {
                 list<block>::erase(x);
@@ -250,15 +259,15 @@ namespace sjtu {
              * just add whatever you want.
              */
             deque<T> *from;
-			list<node> *p;
+			list<T> *p;
             int cur;
 
-            iterator(deque<T> *from, list<node> *p, int cur=0) : from(from), p(p), cur(cur) {}
+            iterator(deque<T> *from, list<T> *p, int cur=0) : from(from), p(p), cur(cur) {}
 
 			list<block>* findBlock() const {
-				auto p1 = p;
-				for (; !p1->data->from; p1 = p1->prev);
-				return p1->data->from;
+				list<T> *p1 = p;
+				for (; !nfrom(p1); p1 = p1->prev);
+				return nfrom(p1);
 			}
 
         public:
@@ -274,52 +283,34 @@ namespace sjtu {
                 if (cur+n >= from->size_c) {
                     throw index_out_of_bound();
                 }
-				auto p1 = p;
+				list<T> *p1 = p;
 				int nn = n;
 
                 //Special for begin() + n
-                if (p1->prev->data->from && nn >= p1->prev->data->from->data->size) {
-                    nn-=p1->prev->data->from->data->size;
+                if (nfrom(p1->prev) && nn >= nfrom(p1->prev)->data->size) {
+                    nn-=nfrom(p1->prev)->data->size;
                     p1 = p1->prev;
                 } else {
-                    for (; nn && !p1->data->from; p1 = p1->next, nn--)
+                    for (; nn && !nfrom(p1); p1 = p1->next, nn--)
                         ;
-                    if (!p1->data->from) return iterator(from, p1, cur+n);
+                    if (!nfrom(p1)) return iterator(from, p1, cur+n);
                 }
-                list<block> *pb = p1->data->from->next;
+                list<block> *pb = nfrom(p1)->next;
 				for (; nn>=pb->data->size; nn -= pb->data->size, pb = pb->next);
 				return iterator(from, pb->data->head.next->next_nth(nn), cur+n);
-				/*
-                if (cur + n <= p1->data.size) {
-                    return iterator(p1, p2->next_nth(n), cur+n);
-                }
-                n = n + cur - p1->data.size;
-                p1 = p1->next;
-                for (; n > p1->data.size; n-=p1->data.size) p1 = p1->next;
-                return iterator(p1, p1->data.head.next_nth(n), n);
-				*/
             }
             iterator operator-(const int &n) const {
                 if (n<0) return *this + (-n);
                 if (cur-n < 0) {
                     throw index_out_of_bound();
                 }
-				auto p1 = p;
+				list<T> *p1 = p;
 				int ncur = cur, nn = n;
-				for (; nn && !p1->data->from; p1 = p1->prev, nn--, ncur--);
-				if (!p1->data->from) return iterator(from, p1, ncur);
-				list<block> *pb = p1->data->from->prev;
+				for (; nn && !nfrom(p1); p1 = p1->prev, nn--, ncur--);
+				if (!nfrom(p1)) return iterator(from, p1, ncur);
+				list<block> *pb = nfrom(p1)->prev;
 				for (; nn>=pb->data->size; nn -= pb->data->size, ncur -= pb->data->size, pb = pb->prev);
 				return iterator(from, pb->data->head.prev->prev_nth(nn), ncur-nn);
-				/*
-                if (cur-n > 0) {
-                    return iterator(p1, p2->prev_nth(n), cur-n);
-                }
-                n = n-cur;
-                p1 = p1->prev;
-                for (; n > p1->data.size; n-=p1->data.size) p1 = p1->prev;
-                return iterator(p1, p1->data.head.prev_nth(n), n);
-				*/
             }
 
             /**
@@ -373,19 +364,19 @@ namespace sjtu {
              * *it
              */
             T &operator*() const {
-                if (!p->data || !p->data->data) {
+                if (!p->data) {
                     throw invalid_iterator();
                 }
-                return *p->data->data;
+                return *p->data;
             }
             /**
              * it->field
              */
             T *operator->() const noexcept {
-                if (!p->data || !p->data->data) {
+                if (!p->data) {
                     throw invalid_iterator();
                 }
-                return p->data->data;
+                return p->data;
             }
 
             /**
@@ -425,15 +416,15 @@ namespace sjtu {
              * just add whatever you want.
              */
             const deque<T> *from;
-			const list<node> *p;
+			const list<T> *p;
             int cur;
 
-            const_iterator(const deque<T> *from, const list<node> *p, int cur=0) : from(from), p(p), cur(cur) {}
+            const_iterator(const deque<T> *from, const list<T> *p, int cur=0) : from(from), p(p), cur(cur) {}
 
 			list<block>* findBlock() const {
 				auto p1 = p;
-				for (; !p1->data->from; p1 = p1->prev);
-				return p1->data->from;
+				for (; !nfrom(p1); p1 = p1->prev);
+				return nfrom(p1);
 			}
         public:
             const_iterator() : from(nullptr), p(nullptr), cur(0) {}
@@ -446,55 +437,37 @@ namespace sjtu {
              */
             const_iterator operator+(const int &n) const {
                 if (n<0) return *this - (-n);
-                if (cur + n >= from->size_c) {
+                if (cur+n >= from->size_c) {
                     throw index_out_of_bound();
                 }
-				auto p1 = p;
+				auto *p1 = p;
 				int nn = n;
 
                 //Special for begin() + n
-                if (p1->prev->data->from && nn >= p1->prev->data->from->data->size) {
-                    nn-=p1->prev->data->from->data->size;
+                if (nfrom(p1->prev) && nn >= nfrom(p1->prev)->data->size) {
+                    nn-=nfrom(p1->prev)->data->size;
                     p1 = p1->prev;
                 } else {
-                    for (; nn && !p1->data->from; p1 = p1->next, nn--)
+                    for (; nn && !nfrom(p1); p1 = p1->next, nn--)
                         ;
-                    if (!p1->data->from) return const_iterator(from, p1, cur+n);
+                    if (!nfrom(p1)) return const_iterator(from, p1, cur+n);
                 }
-				list<block> *pb = p1->data->from->next;
+                list<block> *pb = nfrom(p1)->next;
 				for (; nn>=pb->data->size; nn -= pb->data->size, pb = pb->next);
 				return const_iterator(from, pb->data->head.next->next_nth(nn), cur+n);
-				/*
-                if (cur + n <= p1->data.size) {
-                    return iterator(p1, p2->next_nth(n), cur+n);
-                }
-                n = n + cur - p1->data.size;
-                p1 = p1->next;
-                for (; n > p1->data.size; n-=p1->data.size) p1 = p1->next;
-                return iterator(p1, p1->data.head.next_nth(n), n);
-				*/
             }
             const_iterator operator-(const int &n) const {
                 if (n<0) return *this + (-n);
                 if (cur-n < 0) {
                     throw index_out_of_bound();
                 }
-				auto p1 = p;
+				auto *p1 = p;
 				int ncur = cur, nn = n;
-				for (; nn && !p1->data->from; p1 = p1->prev, nn--, ncur--);
-				if (!p1->data->from) return const_iterator(from, p1, ncur);
-				list<block> *pb = p1->data->from->prev;
+				for (; nn && !nfrom(p1); p1 = p1->prev, nn--, ncur--);
+				if (!nfrom(p1)) return const_iterator(from, p1, ncur);
+				list<block> *pb = nfrom(p1)->prev;
 				for (; nn>=pb->data->size; nn -= pb->data->size, ncur -= pb->data->size, pb = pb->prev);
 				return const_iterator(from, pb->data->head.prev->prev_nth(nn), ncur-nn);
-				/*
-                if (cur-n > 0) {
-                    return iterator(p1, p2->prev_nth(n), cur-n);
-                }
-                n = n-cur;
-                p1 = p1->prev;
-                for (; n > p1->data.size; n-=p1->data.size) p1 = p1->prev;
-                return iterator(p1, p1->data.head.prev_nth(n), n);
-				*/
             }
 
             /**
@@ -548,19 +521,19 @@ namespace sjtu {
              * *it
              */
             T &operator*() const {
-                if (!p->data || !p->data->data) {
+                if (!p->data) {
                     throw invalid_iterator();
                 }
-                return *p->data->data;
+                return *p->data;
             }
             /**
              * it->field
              */
             T *operator->() const noexcept {
-                if (!p->data || !p->data->data) {
+                if (!p->data) {
                     throw invalid_iterator();
                 }
-                return p->data->data;
+                return p->data;
             }
 
             /**
@@ -589,13 +562,13 @@ namespace sjtu {
          */
         deque() : size_c(1) {
             bs.data = new block();
-            bs.data->head.insert_after(new list<node>(new node()));
+            bs.data->head.insert_after(new node());
 			assignBlock(&bs);
             bs.data->size=1;
         }
         deque(const deque &other) : size_c(1) {
             bs.data = new block();
-            bs.data->head.insert_after(new list<node>(new node()));
+            bs.data->head.insert_after(new node());
 			assignBlock(&bs);
             bs.data->size=1;
             copy(other);
