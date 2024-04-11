@@ -97,6 +97,7 @@ namespace sjtu {
 				if (data) delete data;
 			}
 		};
+
         struct block { 
             list<node> head;
             int size;
@@ -160,6 +161,7 @@ namespace sjtu {
                 head.insert_before(new list<T>(new node(data)));
             }
         };
+
         list<block> bs;
         int size, bsize;
 
@@ -190,13 +192,28 @@ namespace sjtu {
                     auto *tmp = x->data, *p = x->prev;
                     x->data = nullptr;
 					list::erase(x);
-                    p->data.link_after(tmp);
+                    p->data->link_after(tmp);
                 } else if (x->next!= &bs && x->next->data.size + x->data.size <= 2*bsize) {
                     auto *tmp = x->next->data, *p = x;
                     x->next->data = nullptr;
 					list::erase(x->next);
-                    p->data.link_after(tmp);
+                    p->data->link_after(tmp);
                 }
+            }
+        }
+
+        void copy(const deque &other) {
+            bs.data.size=1;
+            size = other.size;
+            bsize = sqrt(size);
+            int cnt = bsize;
+            for (auto it = other.begin(); it!=other.end(); it++) {
+                if (cnt==bsize) {
+                    cnt = 0;
+                    bs.insert_before(assignBlock(new list<block>()));
+                }
+                bs.prev->data->push_back(*it);
+                cnt++;
             }
         }
 
@@ -503,7 +520,7 @@ namespace sjtu {
         /**
          * constructors.
          */
-        deque() : size(0), bsize(128), bs() {
+        deque() : size(0), bsize(0), bs() {
             bs.data.head.insert_after(new list<node>());
 			assignBlock(&bs);
             bs.data.size=1;
@@ -511,18 +528,7 @@ namespace sjtu {
         deque(const deque &other) {
             bs.data.head.insert_after(new list<node>());
 			assignBlock(&bs);
-            bs.data.size=1;
-            size = other.size;
-            bsize = sqrt(size);
-            int cnt = bsize;
-            for (auto it = other.begin(); it!=other.end(); it++) {
-                if (cnt==bsize) {
-                    cnt = 0;
-                    bs.insert_before(assignBlock(new list<block>()));
-                }
-                bs.prev->data->push_back(*it);
-                cnt++;
-            }
+            copy(other);
         }
 
         /**
@@ -536,17 +542,7 @@ namespace sjtu {
         deque &operator=(const deque &other) {
             if (&other == this) return;
             clear();
-            size = other.size,
-            bsize = sqrt(size);
-            int cnt = bsize;
-            for (auto it = other.begin(); it!=other.end(); it++) {
-                if (cnt==bsize) {
-                    cnt = 0;
-                    bs.insert_before(new block());
-                }
-                bs.prev->data->push_back(*it);
-                cnt++;
-            }
+            copy(other);
         }
 
         /**
@@ -603,10 +599,10 @@ namespace sjtu {
          * return an iterator to the end.
          */
         iterator end() {
-            return iterator(this, &bs.data.head, size-1);
+            return iterator(this, bs.data->head.next, size);
         }
         const_iterator cend() const {
-            return const_iterator(this, &bs.data.head, size-1);
+            return const_iterator(this, bs.data->head.next, size);
         }
 
         /**
@@ -641,7 +637,7 @@ namespace sjtu {
                 throw invalid_iterator();
             }
 			auto p1 = pos.findBlock();
-            p1->data.insert_before(pos.p, value);
+            p1->data->insert_before(pos.p, value);
             size++;
             update(p1);
         }
@@ -653,13 +649,13 @@ namespace sjtu {
          * the iterator is invalid, or it points to a wrong place.
          */
         iterator erase(iterator pos) {
-            if (size == 1 || pos.from!=this) {
+            if (empty() || pos.from!=this) {
                 throw invalid_iterator();
             }
             iterator nxt = pos+1;
 			auto p1 = pos.findBlock();
-			if (p1)
-            p1->data.erase(pos.p);
+            if (p1 == &bs) throw invalid_iterator();
+            p1->data->erase(pos.p);
 			nxt.cur--;
             size--;
             update(p1);
@@ -680,6 +676,9 @@ namespace sjtu {
          * throw when the container is empty.
          */
         void pop_back() {
+            if (empty()) {
+                throw container_is_empty();
+            }
             erase(end()-1);
             size--;
             update(bs.prev);
@@ -700,6 +699,7 @@ namespace sjtu {
          */
         void pop_front() {
 			if (empty()) {
+                throw container_is_empty();
 			}
             erase(begin());
             size--;
