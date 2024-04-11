@@ -10,7 +10,21 @@ namespace sjtu {
 
     template <class T>
     class list {
+	private:
+
+		void dislink() {
+            if (prev) prev->next = next;
+            if (next) next->prev = prev;
+            prev = next = this;
+		}
+
     public:
+
+		static void erase(list<T> *p) {
+			p->dislink();
+			delete p;
+		}
+
         T *data;
         list *next, *prev;
         list() : data(nullptr) {
@@ -36,12 +50,6 @@ namespace sjtu {
             prev->insert_after(before);
         }
 
-        void erase() {
-            if (prev) prev->next = next;
-            if (next) next->prev = prev;
-            prev = next = this;
-        }
-
         list<T>* next_nth(int n) const {
             list<T> *p = this;
             for (; n > 0; --n) p = p->next;
@@ -61,12 +69,12 @@ namespace sjtu {
             }
             if (next && next!=this) {
                 list *tmp = next;
-                erase();
+				dislink();
                 delete tmp;
             }
             if (prev && prev!=this) {
                 list *tmp = prev;
-                erase();
+				dislink();
                 delete tmp;
             }
         }
@@ -108,8 +116,7 @@ namespace sjtu {
             }
 
             block *cut_after(int pos) {
-                list *p = &head;
-                for (; pos > 0; p = p->next, --pos);
+                list<node> *p = head.next_nth(pos);
                 block *x = makeBlock();
                 x.head->next = p->next;
                 x.head->prev = head->prev;
@@ -121,9 +128,21 @@ namespace sjtu {
 				return x;
             }
 
+			//Insert before
+			void insert_before(list<node> *p, const T &data) {
+				size++;
+				p->insert_before(new list<node>(new node(data)));
+			}
+
+			//Erase
+			void erase(list<node> *p) {
+				size--;
+				list<node>::erase(p);
+			}
+
             void pop_front() {
                 size--;
-                head->next->erase();
+				list<node>::erase(head->next);
             }
 
             void push_front(const T &data) {
@@ -133,7 +152,7 @@ namespace sjtu {
 
             void pop_back() {
                 size--;
-                head->prev->erase();
+				list<node>::erase(head->prev);
             }
 
             void push_back(const T &data) {
@@ -148,13 +167,21 @@ namespace sjtu {
 			return x->data->head->from = x;
 		}
 
+		list<block>* makeBlock(block *x) {
+			return assignBlock(new list<block>(x));
+		}
+
+		list<block>* makeBlock() {
+			return assignBlock(new list<block>(new block()));
+		}
+
         void update(list<block> *x) {
             if (x == &bs) return;
             bsize = sqrt(size);
 
             //Split
             if (x->data.size > 2*bsize) {
-                x->insert_after(x.data->cut(x->data.size/2));
+                x->insert_after(makeBlock(x.data->cut_after(x->data.size/2)));
             }
 
             //Merge
@@ -162,12 +189,12 @@ namespace sjtu {
                 if (x->prev != &bs && x->prev->data.size + x->data.size <= 2*bsize) {
                     auto *tmp = x->data, *p = x->prev;
                     x->data = nullptr;
-                    x->erase();
+					list::erase(x);
                     p->data.link_after(tmp);
                 } else if (x->next!= &bs && x->next->data.size + x->data.size <= 2*bsize) {
                     auto *tmp = x->next->data, *p = x;
                     x->next->data = nullptr;
-                    x->next->erase();
+					list::erase(x->next);
                     p->data.link_after(tmp);
                 }
             }
@@ -600,7 +627,7 @@ namespace sjtu {
          * clear all contents.
          */
         void clear() {
-            for (; bs.next != &bs; bs.next->erase());
+            for (; bs.next != &bs; list::erase(bs.next));
             size = 1;
         }
 
@@ -626,11 +653,12 @@ namespace sjtu {
          * the iterator is invalid, or it points to a wrong place.
          */
         iterator erase(iterator pos) {
-            if (size == 1 || pos.from!=this || pos.p1 == &bs) {
+            if (size == 1 || pos.from!=this) {
                 throw invalid_iterator();
             }
             iterator nxt = pos+1;
 			auto p1 = pos.findBlock();
+			if (p1)
             p1->data.erase(pos.p);
 			nxt.cur--;
             size--;
@@ -671,6 +699,8 @@ namespace sjtu {
          * throw when the container is empty.
          */
         void pop_front() {
+			if (empty()) {
+			}
             erase(begin());
             size--;
             update(bs.next);
